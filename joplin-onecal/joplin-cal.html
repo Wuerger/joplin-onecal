@@ -1,0 +1,885 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#1e1e2e">
+  <title>Joplin Calendar</title>
+  <link rel="manifest" href="/manifest.json">
+  <link rel="icon" type="image/svg+xml" href="/icon.svg">
+  <link rel="apple-touch-icon" href="/icon.svg">
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #1e1e2e;
+      --card-bg: #252538;
+      --border: #3b3b54;
+      --text: #cdd6f4;
+      --text-dim: #7f849c;
+      --accent: #89b4fa;
+      --accent-green: #a6e3a1;
+      --note-hover: #45475a;
+      --error-bg: #f38ba8;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 14px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      user-select: none;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 10px;
+      flex-wrap: wrap;
+      flex-shrink: 0;
+    }
+    .toolbar-group {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    #statusBanner {
+      display: none;
+      background: var(--error-bg);
+      color: #11111b;
+      padding: 8px 12px;
+      border-radius: 4px;
+      margin-bottom: 10px;
+      font-size: 0.82rem;
+      font-weight: 500;
+      flex-shrink: 0;
+      user-select: text;
+    }
+    button, input {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 5px 10px;
+      border-radius: 4px;
+      font-size: 0.8rem;
+      font-family: inherit;
+    }
+    button { cursor: pointer; }
+    button:hover { background: var(--note-hover); }
+    button.active {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #11111b;
+      font-weight: 600;
+    }
+    .mode-switch {
+      display: inline-flex;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      padding: 2px;
+      gap: 2px;
+      width: 100%;
+    }
+    .mode-switch button {
+      flex: 1;
+      border: none;
+      padding: 5px 10px;
+      border-radius: 3px;
+      background: transparent;
+      color: var(--text-dim);
+      font-size: 0.8rem;
+    }
+    .mode-switch button:hover {
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.05);
+    }
+    .mode-switch button.active {
+      background: var(--accent);
+      color: #11111b;
+      font-weight: 600;
+    }
+    .grid {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: repeat(7, minmax(110px, 1fr));
+      grid-template-rows: auto repeat(auto-fit, minmax(85px, 1fr));
+      gap: 6px;
+      overflow: auto;
+    }
+    .day-header {
+      text-align: center;
+      font-weight: 600;
+      color: var(--text-dim);
+      padding: 2px 0;
+      font-size: 0.8rem;
+    }
+    .day-cell {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      min-height: 85px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      padding: 4px;
+    }
+    .day-cell.other-month { opacity: 0.35; }
+    .day-cell.today { border-color: var(--accent); }
+    .day-number {
+      font-size: 0.78rem;
+      font-weight: bold;
+      color: var(--text-dim);
+      margin-bottom: 4px;
+      display: flex;
+      justify-content: space-between;
+    }
+    .day-count {
+      font-size: 0.7rem;
+      font-weight: normal;
+      color: var(--accent);
+    }
+    .notes-container {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+    .note-link {
+      flex-shrink: 0;
+      font-size: 0.74rem;
+      text-decoration: none;
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.05);
+      padding: 3px 6px;
+      border-radius: 3px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      display: block;
+    }
+    .note-link:hover {
+      background: var(--accent);
+      color: #11111b;
+    }
+    .note-link:hover .note-time {
+      color: #1e1e2e;
+    }
+    .note-time {
+      color: var(--text-dim);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      margin-right: 4px;
+    }
+    /* Settings Modal */
+    .modal-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.65);
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+    }
+    .modal-backdrop.open { display: flex; }
+    .modal {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+      width: 440px;
+      max-width: 92vw;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .modal h3 {
+      margin: 0;
+      font-size: 0.98rem;
+    }
+    .modal-section {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--border);
+    }
+    .modal-section:last-of-type {
+      border-bottom: none;
+      padding-bottom: 0;
+    }
+    .section-title {
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--text-dim);
+    }
+    .field-label {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      font-size: 0.8rem;
+      color: var(--text-dim);
+    }
+    .checkbox-row {
+      display: flex;
+      flex-direction: row;
+      align-items: flex-start;
+      gap: 10px;
+      font-size: 0.82rem;
+      color: var(--text);
+      cursor: pointer;
+      margin-top: 4px;
+    }
+    .checkbox-row input[type="checkbox"] {
+      width: 16px;
+      height: 16px;
+      margin: 2px 0 0 0;
+      flex-shrink: 0;
+      accent-color: var(--accent);
+      cursor: pointer;
+    }
+    .checkbox-text {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .modal input[type="text"], .modal input[type="password"] {
+      width: 100%;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+    .modal-actions {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 4px;
+      gap: 8px;
+    }
+    .hint {
+      font-size: 0.74rem;
+      color: var(--text-dim);
+      line-height: 1.4;
+      user-select: text;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="statusBanner"></div>
+
+  <header>
+    <div class="toolbar-group">
+      <button id="prevBtn" title="Previous Month">&lt;</button>
+      <button id="nextBtn" title="Next Month">&gt;</button>
+      <button id="todayBtn" title="Jump to Today">Today</button>
+      <button id="refreshBtn" title="Refresh notes now (auto-refreshes when window is focused)">↻</button>
+    </div>
+
+    <div style="text-align: center;">
+      <h2 id="monthTitle" style="margin: 0; font-size: 1.05rem;"></h2>
+      <div id="noteStats" style="font-size: 0.72rem; color: var(--text-dim); margin-top: 2px;">Loading notes…</div>
+    </div>
+
+    <div class="toolbar-group">
+      <button id="installPwaBtn" style="display: none; border-color: var(--accent); color: var(--accent);" title="Install Joplin Calendar as a standalone desktop app">⬇ Install</button>
+      <button id="settingsBtn" title="Calendar & Joplin connection settings">⚙️</button>
+    </div>
+  </header>
+
+  <div class="grid" id="calendarGrid"></div>
+
+  <!-- Settings Modal -->
+  <div class="modal-backdrop" id="settingsModal">
+    <div class="modal">
+      <h3>Settings</h3>
+
+      <div class="modal-section">
+        <div class="section-title">Calendar Display</div>
+        <div class="field-label">
+          <span>Show Notes By</span>
+          <div class="mode-switch" role="group" aria-label="Date Mode">
+            <button type="button" id="modeModifiedBtn" class="active" data-mode="user_updated_time">Modified Date</button>
+            <button type="button" id="modeCreatedBtn" data-mode="user_created_time">Created Date</button>
+          </div>
+        </div>
+        <label class="checkbox-row" for="filterAutoSaveInput">
+          <input type="checkbox" id="filterAutoSaveInput" checked>
+          <div class="checkbox-text">
+            <span>Ignore view-only auto-saves</span>
+            <div class="hint">Filters out false updates when Joplin's editor normalizes line endings or formatting on note open.</div>
+          </div>
+        </label>
+      </div>
+
+      <div class="modal-section">
+        <div class="section-title">Local Joplin Connection</div>
+        <div class="hint">
+          Connects directly from your browser to the Joplin Desktop client running on <strong>this computer</strong> (<code>127.0.0.1</code>). Copy your token from Joplin under <strong>Tools / Settings → Web Clipper → Advanced options</strong>.
+        </div>
+        <label class="field-label">
+          <span>Web Clipper Port</span>
+          <input type="text" id="portInput" placeholder="41184">
+        </label>
+        <label class="field-label">
+          <span>Authorization Token</span>
+          <input type="password" id="tokenInput" placeholder="Paste Joplin Web Clipper token…">
+        </label>
+        <div id="authStatus" class="hint" style="color: var(--accent);"></div>
+      </div>
+
+      <div class="modal-actions">
+        <button type="button" id="testConnBtn" style="border-color: var(--accent); color: var(--accent);">
+          🔌 Test Connection
+        </button>
+        <div style="display: flex; gap: 6px;">
+          <button type="button" id="closeSettingsBtn">Cancel</button>
+          <button type="button" id="saveSettingsBtn" style="background: var(--accent); color: #11111b; font-weight: 600;">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const DEFAULT_PORT = "41184";
+
+    function getJoplinToken() {
+      return (localStorage.getItem("joplin_cal_token") || "").trim();
+    }
+
+    function getJoplinPort() {
+      return (localStorage.getItem("joplin_cal_port") || DEFAULT_PORT).trim();
+    }
+
+    function getSavedMode() {
+      const m = localStorage.getItem("joplin_cal_mode");
+      return m === "user_created_time" ? "user_created_time" : "user_updated_time";
+    }
+
+    function getSavedIgnoreAutoSaves() {
+      const val = localStorage.getItem("joplin_cal_ignore_autosaves");
+      return val === null ? true : val === "true";
+    }
+
+    let currentDate = new Date();
+    let currentMode = getSavedMode();
+    let ignoreViewAutoSaves = getSavedIgnoreAutoSaves();
+    let notesCache = [];
+    // Map of noteId -> true last-modified timestamp (or null if only accessed/auto-saved)
+    let realModifiedMap = new Map();
+    let isFetching = false;
+    let lastFetchTime = 0;
+    let lastOpenClickTime = 0;
+
+    // Cross-platform note opener using Joplin's external callback URL protocol
+    // Works across Windows, macOS, and Linux without reading local files.
+    function openNoteInJoplin(noteId) {
+      const now = Date.now();
+      if (now - lastOpenClickTime < 600) return;
+      lastOpenClickTime = now;
+
+      const callbackUrl = `joplin://x-callback-url/openNote?id=${encodeURIComponent(noteId)}`;
+      window.location.href = callbackUrl;
+    }
+
+    // Formats Date to "YYYY-MM-DD" in local time
+    function toLocalDateKey(date) {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, "0");
+      const day = String(date.getDate()).padStart(2, "0");
+      return `${year}-${month}-${day}`;
+    }
+
+    // Formats Date to "YYYYMMDD" for Joplin's /search query syntax (used by rsandz/joplin-calendar)
+    function toJoplinSearchDate(date) {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, "0");
+      const day = String(date.getDate()).padStart(2, "0");
+      return `${year}${month}${day}`;
+    }
+
+    // Computes the visible grid date range for the current month view
+    function getVisibleGridRange(year, month) {
+      const firstDayOfMonth = new Date(year, month, 1);
+      let startingDay = firstDayOfMonth.getDay() - 1;
+      if (startingDay === -1) startingDay = 6;
+
+      const daysInMonth = new Date(year, month + 1, 0).getDate();
+      const totalCells = Math.ceil((startingDay + daysInMonth) / 7) * 7;
+
+      const startDate = new Date(year, month, 1 - startingDay);
+      // Add 1 extra day to end bound because Joplin's `-updated:YYYYMMDD` is exclusive
+      const endDateExclusive = new Date(year, month, 1 - startingDay + totalCells + 1);
+      return { startDate, endDateExclusive, startingDay, daysInMonth, totalCells };
+    }
+
+    // Detects Joplin's initial baseline snapshot revision (length1 === 0)
+    function isInitialSnapshot(rev) {
+      try {
+        const tPatches = JSON.parse(rev.title_diff || "[]");
+        const bPatches = JSON.parse(rev.body_diff || "[]");
+        if (tPatches.length === 1 && tPatches[0].length1 === 0) {
+          if (bPatches.length <= 1 && (bPatches.length === 0 || bPatches[0].length1 === 0)) {
+            return true;
+          }
+        }
+      } catch (_) {}
+      return false;
+    }
+
+    // Strips formatting/line-ending noise that Joplin's WYSIWYG editor changes automatically when viewing a note
+    function stripFormattingNoise(str) {
+      return str
+        .replace(/<\/?(span|div|font|p|br)[^>]*>/gi, "")
+        .replace(/\.\.\.\r?$/g, "")
+        .replace(/[\r\n\s]+/g, "");
+    }
+
+    // Returns true if a revision was merely an automatic editor normalization on note open/view
+    function isAccessAutoSave(rev) {
+      if (isInitialSnapshot(rev)) return false;
+      try {
+        for (const field of ["title_diff", "body_diff"]) {
+          const patches = JSON.parse(rev[field] || "[]");
+          for (const p of patches) {
+            let removed = "";
+            let added = "";
+            for (const [op, txt] of p.diffs || []) {
+              if (op === -1) removed += txt;
+              else if (op === 1) added += txt;
+            }
+            if (stripFormattingNoise(removed) !== stripFormattingNoise(added)) {
+              return false;
+            }
+          }
+        }
+        return true;
+      } catch (_) {
+        return false;
+      }
+    }
+
+    function computeRealModifiedMap(revisions) {
+      const byItem = new Map();
+      for (const r of revisions) {
+        if (!byItem.has(r.item_id)) byItem.set(r.item_id, []);
+        byItem.get(r.item_id).push(r);
+      }
+
+      const result = new Map();
+      for (const [itemId, itemRevs] of byItem.entries()) {
+        itemRevs.sort((a, b) => b.item_updated_time - a.item_updated_time);
+        const realRevs = [];
+        for (let i = 0; i < itemRevs.length; i++) {
+          const r = itemRevs[i];
+          if (isAccessAutoSave(r)) continue;
+          if (isInitialSnapshot(r)) {
+            const nextNewer = i > 0 ? itemRevs[i - 1] : null;
+            if (nextNewer && isAccessAutoSave(nextNewer) && Math.abs(nextNewer.item_updated_time - r.item_updated_time) < 5000) {
+              continue;
+            }
+          }
+          realRevs.push(r);
+        }
+        result.set(itemId, realRevs.length > 0 ? Number(realRevs[0].item_updated_time) : null);
+      }
+      return result;
+    }
+
+    function getNoteTimestamp(note, mode) {
+      const created = Number(note.user_created_time || note.created_time || 0);
+      if (mode === "user_created_time") {
+        return created;
+      }
+      if (ignoreViewAutoSaves && realModifiedMap.has(note.id)) {
+        const realMod = realModifiedMap.get(note.id);
+        return realMod !== null ? realMod : created;
+      }
+      return Number(note.user_updated_time || note.updated_time || 0);
+    }
+
+    async function fetchRecentRevisions(port, token) {
+      let allRevs = [];
+      for (let page = 1; page <= 2; page++) {
+        const res = await fetch(
+          `http://127.0.0.1:${port}/revisions?token=${encodeURIComponent(token)}&fields=id,item_id,item_updated_time,title_diff,body_diff&order_by=item_updated_time&order_dir=DESC&limit=100&page=${page}`,
+          { targetAddressSpace: "loopback" }
+        );
+        if (!res.ok) break;
+        const data = await res.json();
+        if (data.items) allRevs = allRevs.concat(data.items);
+        if (!data.has_more) break;
+      }
+      realModifiedMap = computeRealModifiedMap(allRevs);
+    }
+
+    // Queries Joplin's /search endpoint using `updated:YYYYMMDD -updated:YYYYMMDD` (or `created:`) like rsandz/joplin-calendar
+    async function fetchNotesForCurrentMonth(silent = false) {
+      if (isFetching) return;
+      isFetching = true;
+
+      const banner = document.getElementById("statusBanner");
+      const stats = document.getElementById("noteStats");
+      const token = getJoplinToken();
+      const port = getJoplinPort();
+
+      if (!token) {
+        isFetching = false;
+        if (stats) stats.textContent = "Not connected — click ⚙️ to configure token";
+        openSettings("Paste your Web Clipper token from Joplin (Tools / Settings → Web Clipper → Advanced options) to connect this browser.");
+        return;
+      }
+
+      const year = currentDate.getFullYear();
+      const month = currentDate.getMonth();
+      const { startDate, endDateExclusive } = getVisibleGridRange(year, month);
+      const operator = currentMode === "user_created_time" ? "created" : "updated";
+      const fromStr = toJoplinSearchDate(startDate);
+      const toStr = toJoplinSearchDate(endDateExclusive);
+      const searchQuery = `${operator}:${fromStr} -${operator}:${toStr}`;
+
+      try {
+        if (currentMode === "user_updated_time" && ignoreViewAutoSaves) {
+          await fetchRecentRevisions(port, token);
+        }
+
+        let page = 1;
+        let hasMore = true;
+        let matchedNotes = [];
+
+        while (hasMore) {
+          const response = await fetch(
+            `http://127.0.0.1:${port}/search?token=${encodeURIComponent(token)}&query=${encodeURIComponent(searchQuery)}&fields=id,title,updated_time,created_time,user_updated_time,user_created_time&limit=100&page=${page}`,
+            { targetAddressSpace: "loopback" }
+          );
+
+          if (response.status === 403) {
+            throw new Error("Invalid token for this computer's Joplin client (403 Forbidden). Click ⚙️ to authorize.");
+          }
+          if (!response.ok) {
+            throw new Error(`HTTP Error: ${response.status} ${response.statusText}`);
+          }
+
+          const data = await response.json();
+          if (!data.items) {
+            throw new Error("No items property found in API response. Check token permissions.");
+          }
+
+          matchedNotes = matchedNotes.concat(data.items);
+          hasMore = Boolean(data.has_more);
+          page++;
+        }
+
+        banner.style.display = "none";
+        notesCache = matchedNotes;
+        lastFetchTime = Date.now();
+        renderCalendar(true);
+      } catch (err) {
+        console.error("Joplin Fetch Error:", err);
+        banner.style.display = "block";
+        banner.textContent = `Cannot reach local Joplin API (127.0.0.1:${port}): ${err.message}. Ensure Joplin Desktop & Web Clipper are running, or click ⚙️ to pair token.`;
+        if (stats && notesCache.length === 0) {
+          stats.textContent = "Connection failed";
+        }
+      } finally {
+        isFetching = false;
+      }
+    }
+
+    function renderCalendar(isComplete = true) {
+      const grid = document.getElementById("calendarGrid");
+      const stats = document.getElementById("noteStats");
+      grid.innerHTML = "";
+
+      const mode = currentMode;
+      const year = currentDate.getFullYear();
+      const month = currentDate.getMonth();
+
+      const monthNames = ["January", "February", "March", "April", "May", "June",
+                          "July", "August", "September", "October", "November", "December"];
+      document.getElementById("monthTitle").textContent = `${monthNames[month]} ${year}`;
+
+      const daysOfWeek = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+      daysOfWeek.forEach(day => {
+        const header = document.createElement("div");
+        header.className = "day-header";
+        header.textContent = day;
+        grid.appendChild(header);
+      });
+
+      const { startingDay, daysInMonth, totalCells } = getVisibleGridRange(year, month);
+      const prevMonthDays = new Date(year, month, 0).getDate();
+      const today = new Date();
+      let monthNoteCount = 0;
+
+      for (let i = 0; i < totalCells; i++) {
+        const cell = document.createElement("div");
+        cell.className = "day-cell";
+
+        let dayNumber;
+        let cellDate;
+        let isCurrentMonth = false;
+
+        if (i < startingDay) {
+          dayNumber = prevMonthDays - startingDay + i + 1;
+          cellDate = new Date(year, month - 1, dayNumber);
+          cell.classList.add("other-month");
+        } else if (i >= startingDay + daysInMonth) {
+          dayNumber = i - (startingDay + daysInMonth) + 1;
+          cellDate = new Date(year, month + 1, dayNumber);
+          cell.classList.add("other-month");
+        } else {
+          dayNumber = i - startingDay + 1;
+          cellDate = new Date(year, month, dayNumber);
+          isCurrentMonth = true;
+          if (
+            cellDate.getDate() === today.getDate() &&
+            cellDate.getMonth() === today.getMonth() &&
+            cellDate.getFullYear() === today.getFullYear()
+          ) {
+            cell.classList.add("today");
+          }
+        }
+
+        const targetDateKey = toLocalDateKey(cellDate);
+
+        // Filter notes by matching local YYYY-MM-DD and sort chronologically
+        const dayNotes = notesCache
+          .filter(n => {
+            const ts = getNoteTimestamp(n, mode);
+            if (!ts) return false;
+            return toLocalDateKey(new Date(ts)) === targetDateKey;
+          })
+          .sort((a, b) => getNoteTimestamp(a, mode) - getNoteTimestamp(b, mode));
+
+        if (isCurrentMonth) {
+          monthNoteCount += dayNotes.length;
+        }
+
+        const dateHeader = document.createElement("div");
+        dateHeader.className = "day-number";
+        const numSpan = document.createElement("span");
+        numSpan.textContent = dayNumber;
+        dateHeader.appendChild(numSpan);
+
+        if (dayNotes.length > 0) {
+          const countSpan = document.createElement("span");
+          countSpan.className = "day-count";
+          countSpan.textContent = dayNotes.length;
+          dateHeader.appendChild(countSpan);
+        }
+
+        cell.appendChild(dateHeader);
+
+        const container = document.createElement("div");
+        container.className = "notes-container";
+
+        dayNotes.forEach(note => {
+          const ts = getNoteTimestamp(note, mode);
+          const noteDate = new Date(ts);
+          const timeStr = noteDate.toLocaleTimeString("en-GB", {
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: false
+          });
+          const cleanTitle = (note.title || "").trim() || "Untitled";
+
+          const link = document.createElement("a");
+          link.className = "note-link";
+          link.href = `joplin://x-callback-url/openNote?id=${encodeURIComponent(note.id)}`;
+          link.title = `${timeStr} - ${cleanTitle}`;
+          link.addEventListener("click", e => {
+            e.preventDefault();
+            e.stopPropagation();
+            openNoteInJoplin(note.id);
+          });
+
+          const timeSpan = document.createElement("span");
+          timeSpan.className = "note-time";
+          timeSpan.textContent = timeStr;
+          link.appendChild(timeSpan);
+          link.appendChild(document.createTextNode(cleanTitle));
+
+          container.appendChild(link);
+        });
+
+        cell.appendChild(container);
+        grid.appendChild(cell);
+      }
+
+      if (stats) {
+        const modeLabel = mode === "user_created_time" ? "created" : "modified";
+        stats.textContent = isComplete
+          ? `${monthNoteCount} notes ${modeLabel} in ${monthNames[month]}`
+          : "Loading notes…";
+      }
+    }
+
+    // Navigation controls
+    document.getElementById("prevBtn").addEventListener("click", () => {
+      currentDate = new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1);
+      renderCalendar(false);
+      fetchNotesForCurrentMonth(false);
+    });
+
+    document.getElementById("nextBtn").addEventListener("click", () => {
+      currentDate = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1);
+      renderCalendar(false);
+      fetchNotesForCurrentMonth(false);
+    });
+
+    document.getElementById("todayBtn").addEventListener("click", () => {
+      currentDate = new Date();
+      renderCalendar(false);
+      fetchNotesForCurrentMonth(false);
+    });
+
+    document.getElementById("refreshBtn").addEventListener("click", () => {
+      fetchNotesForCurrentMonth(false);
+    });
+
+    // Auto-refresh when window/tab gains focus (with 3s cooldown)
+    function onFocusRefresh() {
+      if (Date.now() - lastFetchTime > 3000 && getJoplinToken()) {
+        fetchNotesForCurrentMonth(true);
+      }
+    }
+    window.addEventListener("focus", onFocusRefresh);
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") {
+        onFocusRefresh();
+      }
+    });
+
+    // Settings Modal & Connection Testing
+    const settingsModal = document.getElementById("settingsModal");
+    const portInput = document.getElementById("portInput");
+    const tokenInput = document.getElementById("tokenInput");
+    const authStatus = document.getElementById("authStatus");
+    const modeModifiedBtn = document.getElementById("modeModifiedBtn");
+    const modeCreatedBtn = document.getElementById("modeCreatedBtn");
+    const filterAutoSaveInput = document.getElementById("filterAutoSaveInput");
+
+    let pendingMode = currentMode;
+
+    function syncModalModeButtons(mode) {
+      pendingMode = mode;
+      modeModifiedBtn.classList.toggle("active", mode === "user_updated_time");
+      modeCreatedBtn.classList.toggle("active", mode === "user_created_time");
+    }
+
+    modeModifiedBtn.addEventListener("click", () => syncModalModeButtons("user_updated_time"));
+    modeCreatedBtn.addEventListener("click", () => syncModalModeButtons("user_created_time"));
+
+    function openSettings(message = "") {
+      portInput.value = getJoplinPort();
+      tokenInput.value = getJoplinToken();
+      syncModalModeButtons(currentMode);
+      filterAutoSaveInput.checked = ignoreViewAutoSaves;
+      authStatus.textContent = message;
+      settingsModal.classList.add("open");
+    }
+
+    document.getElementById("settingsBtn").addEventListener("click", () => openSettings());
+    document.getElementById("closeSettingsBtn").addEventListener("click", () => {
+      settingsModal.classList.remove("open");
+    });
+    settingsModal.addEventListener("click", e => {
+      if (e.target === settingsModal) settingsModal.classList.remove("open");
+    });
+    window.addEventListener("keydown", e => {
+      if (e.key === "Escape") settingsModal.classList.remove("open");
+    });
+
+    document.getElementById("saveSettingsBtn").addEventListener("click", () => {
+      currentMode = pendingMode;
+      ignoreViewAutoSaves = filterAutoSaveInput.checked;
+      localStorage.setItem("joplin_cal_mode", currentMode);
+      localStorage.setItem("joplin_cal_ignore_autosaves", String(ignoreViewAutoSaves));
+      localStorage.setItem("joplin_cal_port", portInput.value.trim() || DEFAULT_PORT);
+      localStorage.setItem("joplin_cal_token", tokenInput.value.trim());
+      settingsModal.classList.remove("open");
+      renderCalendar(false);
+      fetchNotesForCurrentMonth(false);
+    });
+
+    document.getElementById("testConnBtn").addEventListener("click", async () => {
+      const port = portInput.value.trim() || DEFAULT_PORT;
+      const token = tokenInput.value.trim();
+      if (!token) {
+        authStatus.style.color = "var(--error-bg)";
+        authStatus.textContent = "Please paste your Authorization Token first.";
+        return;
+      }
+      authStatus.style.color = "var(--accent)";
+      authStatus.textContent = `Testing connection to 127.0.0.1:${port}…`;
+      try {
+        const pingRes = await fetch(`http://127.0.0.1:${port}/ping`, {
+          targetAddressSpace: "loopback"
+        });
+        const pingText = (await pingRes.text()).trim();
+        if (pingText !== "JoplinClipperServer") {
+          throw new Error(`Unexpected response from port ${port}.`);
+        }
+
+        const checkRes = await fetch(
+          `http://127.0.0.1:${port}/notes?limit=1&fields=id&token=${encodeURIComponent(token)}`,
+          { targetAddressSpace: "loopback" }
+        );
+        if (checkRes.ok) {
+          authStatus.style.color = "var(--accent-green)";
+          authStatus.textContent = "✓ Connected! Token is valid — click Save to apply.";
+        } else if (checkRes.status === 403) {
+          authStatus.style.color = "var(--error-bg)";
+          authStatus.textContent = "✗ Joplin is reachable, but the Authorization Token is invalid (403 Forbidden).";
+        } else {
+          authStatus.style.color = "var(--error-bg)";
+          authStatus.textContent = `✗ Unexpected HTTP status: ${checkRes.status}`;
+        }
+      } catch (err) {
+        authStatus.style.color = "var(--error-bg)";
+        authStatus.textContent = `✗ Cannot reach Joplin on 127.0.0.1:${port}: ${err.message}`;
+      }
+    });
+
+    // PWA Installation & Service Worker Registration
+    let deferredInstallPrompt = null;
+    const installPwaBtn = document.getElementById("installPwaBtn");
+
+    window.addEventListener("beforeinstallprompt", e => {
+      e.preventDefault();
+      deferredInstallPrompt = e;
+      installPwaBtn.style.display = "inline-block";
+    });
+
+    installPwaBtn.addEventListener("click", async () => {
+      if (!deferredInstallPrompt) return;
+      deferredInstallPrompt.prompt();
+      await deferredInstallPrompt.userChoice;
+      deferredInstallPrompt = null;
+      installPwaBtn.style.display = "none";
+    });
+
+    window.addEventListener("appinstalled", () => {
+      deferredInstallPrompt = null;
+      installPwaBtn.style.display = "none";
+    });
+
+    if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost" || location.hostname === "127.0.0.1")) {
+      navigator.serviceWorker.register("/sw.js").catch(err => {
+        console.warn("Service worker registration failed:", err);
+      });
+    }
+
+    renderCalendar(false);
+    fetchNotesForCurrentMonth(false);
+  </script>
+</body>
+</html>
